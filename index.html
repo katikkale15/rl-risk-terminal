@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RISK TERMINAL — Observability Simulator</title>
+  <meta name="description" content="Interactive simulator showing how an RL/trading agent's survival is bounded by its observation space, not its model complexity." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="terminal-container">
+
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <header class="term-header">
+      <span class="term-title">RISK TERMINAL <span class="version">v1.0</span></span>
+      <span class="term-subtitle">Feature Ablation Simulator — Observation Space vs. Survival</span>
+    </header>
+
+    <!-- ── Tier selector ───────────────────────────────────────────────── -->
+    <div class="control-row tier-row" role="group" aria-label="Tier presets">
+      <button class="tier-btn active" data-tier="0" aria-pressed="true">TIER 0</button>
+      <button class="tier-btn"        data-tier="1" aria-pressed="false">TIER 1</button>
+      <button class="tier-btn"        data-tier="2" aria-pressed="false">TIER 2</button>
+      <button class="tier-btn"        data-tier="3" aria-pressed="false">TIER 3</button>
+      <button class="tier-btn"        data-tier="4" aria-pressed="false">TIER 4</button>
+      <button class="tier-btn"        data-tier="5" aria-pressed="false">TIER 5</button>
+      <button class="tier-btn sandbox-btn" id="btn-sandbox" aria-pressed="false">SANDBOX</button>
+    </div>
+
+    <!-- ── Arena canvas ────────────────────────────────────────────────── -->
+    <div class="canvas-wrapper" role="img" aria-label="Simulation arena">
+      <canvas id="arena"></canvas>
+    </div>
+
+    <!-- ── Status bar ──────────────────────────────────────────────────── -->
+    <div class="status-bar" aria-live="polite" aria-atomic="true">
+      <span id="live-count">LIVE: —</span>
+      <span id="signal-label">SIGNAL: —</span>
+      <span id="episode-count">EPISODE: —</span>
+      <span id="elapsed-time">TIME: 0.0s</span>
+    </div>
+
+    <!-- ── Equity curve canvas ─────────────────────────────────────────── -->
+    <div class="canvas-wrapper equity-wrapper" role="img" aria-label="Equity curve — surviving positions over episode time">
+      <canvas id="equity-curve"></canvas>
+    </div>
+
+    <!-- ── Feature Online + Observation Vector ─────────────────────────── -->
+    <div class="info-row">
+
+      <div class="card" id="feature-card">
+        <div class="card-label">FEATURE ONLINE</div>
+        <div class="feature-signal" id="feature-signal">NONE</div>
+        <div class="feature-body"   id="feature-body"></div>
+      </div>
+
+      <div class="card obs-card">
+        <div class="card-label">OBSERVATION VECTOR</div>
+        <p class="obs-legend">Focus: nearest surviving position to market shock</p>
+        <div class="obs-fields" aria-label="Live observation vector">
+          <div class="obs-row">
+            <span class="obs-key">DD:</span>
+            <span class="obs-val locked" id="obs-dd">—</span>
+            <span class="obs-hint">distance to shock (px)</span>
+          </div>
+          <div class="obs-row">
+            <span class="obs-key">DIR:</span>
+            <span class="obs-val locked" id="obs-dir">—</span>
+            <span class="obs-hint">shock direction (dx, dy)</span>
+          </div>
+          <div class="obs-row">
+            <span class="obs-key">VOL:</span>
+            <span class="obs-val locked" id="obs-vol">—</span>
+            <span class="obs-hint">shock speed (px/s)</span>
+          </div>
+          <div class="obs-row">
+            <span class="obs-key">LIQ:</span>
+            <span class="obs-val locked" id="obs-liq">—</span>
+            <span class="obs-hint">distance to nearest wall (px)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Sandbox panel (hidden until SANDBOX is selected) ────────────── -->
+    <div class="card sandbox-panel hidden" id="sandbox-panel">
+      <div class="card-label">SANDBOX — MANUAL SIGNAL OVERRIDE</div>
+      <p class="sandbox-note">
+        Custom combinations are simulated and visualised normally but excluded from the backtest table below.
+      </p>
+      <div class="sandbox-toggles">
+        <label class="toggle-label">
+          <input type="checkbox" id="tog-distance" class="toggle-input" />
+          <span>DISTANCE (DD)</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="tog-direction" class="toggle-input" />
+          <span>DIRECTION (DIR)</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="tog-velocity" class="toggle-input" />
+          <span>VELOCITY (VOL)</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="tog-walls" class="toggle-input" />
+          <span>WALL PROXIMITY (LIQ)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- ── Backtest / watchlist table ──────────────────────────────────── -->
+    <div class="card">
+      <div class="card-label">BACKTEST — SURVIVAL RATE BY TIER</div>
+      <table class="watchlist" id="watchlist" aria-label="Per-tier survival statistics">
+        <thead>
+          <tr>
+            <th scope="col">TIER</th>
+            <th scope="col">SIGNAL</th>
+            <th scope="col">EPISODES</th>
+            <th scope="col">SURVIVAL RATE</th>
+          </tr>
+        </thead>
+        <tbody id="watchlist-body"></tbody>
+      </table>
+    </div>
+
+    <!-- ── Playback controls ────────────────────────────────────────────── -->
+    <div class="control-row controls-row">
+      <button class="ctrl-btn"        id="btn-playpause">PAUSE</button>
+      <button class="ctrl-btn"        id="btn-reset-episode">RESET EPISODE</button>
+      <button class="ctrl-btn danger" id="btn-reset-stats">RESET STATS</button>
+    </div>
+
+    <footer class="term-footer">
+      RISK TERMINAL — educational simulator &nbsp;|&nbsp; no real market data &nbsp;|&nbsp; no financial advice
+    </footer>
+
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
