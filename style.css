@@ -142,6 +142,9 @@ html, body {
 
 .status-fields span { white-space: nowrap; }
 
+.policy-scripted { color: var(--text); }
+.policy-nn       { color: var(--green); font-weight: bold; letter-spacing: 0.05em; }
+
 .ctrl-group { display: flex; gap: 3px; flex-shrink: 0; }
 
 .ctrl-btn {

@@ -1,6 +1,56 @@
 import { TIERS, SANDBOX_TUNE } from './tiers.js';
 
 export const SPAWN_COUNT   = 12;
+
+// ── Neural-network inference ─────────────────────────────────────────────────
+// Models are loaded by main.js and injected via sim.setModels().
+// Observation normalisation constants must match training/env.py exactly.
+const NN_DIAG        = Math.sqrt(800 ** 2 + 480 ** 2); // arena diagonal ≈ 932.7
+const NN_MAX_SV      = 85 * 1.08;                       // max shock speed ≈ 91.8
+const NN_WALL_MARGIN = 120;                              // observation range for walls
+
+// Forward pass through an exported MLP.
+// layer format: { W: float[][], b: float[], act: 'tanh'|'none' }
+function nnForward(obs, layers) {
+  let x = obs;
+  for (const layer of layers) {
+    const out = layer.b.map((bi, i) =>
+      layer.W[i].reduce((s, w, j) => s + w * x[j], bi)
+    );
+    x = layer.act === 'tanh' ? out.map(Math.tanh) : out;
+  }
+  return x; // [dx, dy] raw direction
+}
+
+// Build observation vector for one position — must mirror env.py _obs() exactly.
+function computeNNObs(pos, shock, tier, W, H) {
+  const dx   = shock.x - pos.x;
+  const dy   = shock.y - pos.y;
+  const dist = Math.hypot(dx, dy) || 1e-6;
+  const obs  = [];
+
+  // T2+: [normalised_distance, dir_x_to_shock, dir_y_to_shock]
+  obs.push(Math.min(dist / NN_DIAG, 1));
+  obs.push(dx / dist);
+  obs.push(dy / dist);
+
+  // T3+: shock velocity normalised
+  if (tier >= 3) {
+    obs.push(Math.max(-1, Math.min(1, shock.vx / NN_MAX_SV)));
+    obs.push(Math.max(-1, Math.min(1, shock.vy / NN_MAX_SV)));
+  }
+
+  // T4+: wall proximity [west, east, north, south]
+  if (tier >= 4) {
+    const m = NN_WALL_MARGIN;
+    obs.push(Math.max(0, Math.min(1, (m - pos.x)        / m)));
+    obs.push(Math.max(0, Math.min(1, (pos.x - (W - m))  / m)));
+    obs.push(Math.max(0, Math.min(1, (m - pos.y)        / m)));
+    obs.push(Math.max(0, Math.min(1, (pos.y - (H - m))  / m)));
+  }
+
+  return obs;
+}
 const BASE_SPEED           = 85;   // px/s for positions
 const SHOCK_SPEED_MULT     = 1.08; // shock is 8% faster than base
 const ELIM_RADIUS          = 16;   // px — elimination contact distance
@@ -37,6 +87,7 @@ export class Simulation {
 
     this.tierId        = 0;
     this.sandboxSignals = null; // null → use tier preset
+    this.models        = {};    // { 2: layers[], 3: layers[], ... } set by main.js
     this.paused        = false;
     this.episodeCount  = 0;
     this.lastTime      = null;
@@ -94,6 +145,15 @@ export class Simulation {
     if (this.onEpisodeEnd) this.onEpisodeEnd(this.tierStats);
   }
 
+  setModels(models) {
+    this.models = models; // { tierId: { layers: [...] } }
+  }
+
+  // Returns true when the active tier has a loaded NN model.
+  get usingNN() {
+    return !this.sandboxSignals && this.models[this.tierId] != null;
+  }
+
   get currentSignals() {
     return this.sandboxSignals ?? TIERS[this.tierId].signals;
   }
@@ -114,6 +174,7 @@ export class Simulation {
       focus:          this._getFocusPosition(),
       shock:          this.shock,
       signals:        this.currentSignals,
+      usingNN:        this.usingNN,
     };
   }
 
@@ -222,76 +283,87 @@ export class Simulation {
 
   _updatePosition(pos, signals, tune, dt) {
     const shock = this.shock;
-    const sdx   = shock.x - pos.x;
-    const sdy   = shock.y - pos.y;
-    const dist  = Math.hypot(sdx, sdy) || 1;
+    const dist  = Math.hypot(shock.x - pos.x, shock.y - pos.y) || 1;
+    const model = this.models[this.tierId];
 
-    // Random heading timer (governs T0/T1 wandering; also used as a fallback)
-    pos.headingTimer -= dt;
-    if (pos.headingTimer <= 0) {
-      pos.heading      = Math.random() * Math.PI * 2;
-      pos.headingTimer = HEADING_MIN + Math.random() * (HEADING_MAX - HEADING_MIN);
-    }
+    // ── Neural-network path (T2–T5 when model is loaded) ─────────────────
+    if (model && signals.direction) {
+      const obs          = computeNNObs(pos, shock, this.tierId, this.W, this.H);
+      const [rawX, rawY] = nnForward(obs, model.layers);
+      const len          = Math.hypot(rawX, rawY) || 1;
+      const moveX        = rawX / len;
+      const moveY        = rawY / len;
 
-    // Speed: base + panic boost when distance signal is available
-    let speed = BASE_SPEED;
-    if (signals.distance) {
-      const reactDist  = 260;
-      const proximity  = Math.max(0, 1 - dist / reactDist);
-      speed = Math.min(BASE_SPEED * (1 + tune.panicScale * proximity), BASE_SPEED * tune.speedMult);
-    }
+      // Panic speed (same formula as scripted path)
+      const proximity = Math.max(0, 1 - dist / 260);
+      const speed     = Math.min(
+        BASE_SPEED * (1 + 1.5 * proximity),
+        BASE_SPEED * 1.5,
+      );
 
-    // Movement direction
-    let moveX, moveY;
-    if (signals.direction) {
-      // Predict shock location if velocity signal is available
-      let targetX = shock.x, targetY = shock.y;
-      if (signals.velocity && tune.lookAhead > 0) {
-        targetX += shock.vx * tune.lookAhead;
-        targetY += shock.vy * tune.lookAhead;
-      }
+      pos.vx = moveX * speed;
+      pos.vy = moveY * speed;
+      pos.x += pos.vx * dt;
+      pos.y += pos.vy * dt;
 
-      // Flee vector (away from predicted target)
-      const fdx  = pos.x - targetX;
-      const fdy  = pos.y - targetY;
-      const flen = Math.hypot(fdx, fdy) || 1;
-      let fleeX  = fdx / flen;
-      let fleeY  = fdy / flen;
-
-      // Wall avoidance blend (T4+)
-      if (signals.walls) {
-        const m = tune.wallMargin;
-        let wX = 0, wY = 0;
-        if (pos.x < m)          wX += (m - pos.x) / m;
-        if (pos.x > this.W - m) wX -= (pos.x - (this.W - m)) / m;
-        if (pos.y < m)          wY += (m - pos.y) / m;
-        if (pos.y > this.H - m) wY -= (pos.y - (this.H - m)) / m;
-
-        const wLen = Math.hypot(wX, wY);
-        if (wLen > 0.001) {
-          wX /= wLen; wY /= wLen;
-          const w  = tune.wallWeight;
-          fleeX    = fleeX * (1 - w) + wX * w;
-          fleeY    = fleeY * (1 - w) + wY * w;
-          const bLen = Math.hypot(fleeX, fleeY) || 1;
-          fleeX  /= bLen; fleeY  /= bLen;
-        }
-      }
-
-      moveX = fleeX;
-      moveY = fleeY;
+    // ── Scripted fallback path (T0/T1, sandbox, or model not yet loaded) ─
     } else {
-      // T0 / T1: random walk
-      moveX = Math.cos(pos.heading);
-      moveY = Math.sin(pos.heading);
+      // Random heading timer for T0/T1 wandering
+      pos.headingTimer -= dt;
+      if (pos.headingTimer <= 0) {
+        pos.heading      = Math.random() * Math.PI * 2;
+        pos.headingTimer = HEADING_MIN + Math.random() * (HEADING_MAX - HEADING_MIN);
+      }
+
+      let speed = BASE_SPEED;
+      if (signals.distance) {
+        const proximity = Math.max(0, 1 - dist / 260);
+        speed = Math.min(BASE_SPEED * (1 + tune.panicScale * proximity), BASE_SPEED * tune.speedMult);
+      }
+
+      let moveX, moveY;
+      if (signals.direction) {
+        let targetX = shock.x, targetY = shock.y;
+        if (signals.velocity && tune.lookAhead > 0) {
+          targetX += shock.vx * tune.lookAhead;
+          targetY += shock.vy * tune.lookAhead;
+        }
+        const fdx  = pos.x - targetX;
+        const fdy  = pos.y - targetY;
+        const flen = Math.hypot(fdx, fdy) || 1;
+        let fleeX  = fdx / flen;
+        let fleeY  = fdy / flen;
+
+        if (signals.walls) {
+          const m = tune.wallMargin;
+          let wX = 0, wY = 0;
+          if (pos.x < m)          wX += (m - pos.x) / m;
+          if (pos.x > this.W - m) wX -= (pos.x - (this.W - m)) / m;
+          if (pos.y < m)          wY += (m - pos.y) / m;
+          if (pos.y > this.H - m) wY -= (pos.y - (this.H - m)) / m;
+          const wLen = Math.hypot(wX, wY);
+          if (wLen > 0.001) {
+            wX /= wLen; wY /= wLen;
+            const w = tune.wallWeight;
+            fleeX = fleeX * (1 - w) + wX * w;
+            fleeY = fleeY * (1 - w) + wY * w;
+            const bLen = Math.hypot(fleeX, fleeY) || 1;
+            fleeX /= bLen; fleeY /= bLen;
+          }
+        }
+        moveX = fleeX; moveY = fleeY;
+      } else {
+        moveX = Math.cos(pos.heading);
+        moveY = Math.sin(pos.heading);
+      }
+
+      pos.vx = moveX * speed;
+      pos.vy = moveY * speed;
+      pos.x += pos.vx * dt;
+      pos.y += pos.vy * dt;
     }
 
-    pos.vx  = moveX * speed;
-    pos.vy  = moveY * speed;
-    pos.x  += pos.vx * dt;
-    pos.y  += pos.vy * dt;
-
-    // Hard-bounce off arena walls
+    // Hard-bounce off arena walls (both paths)
     const r = 9;
     if (pos.x < r)          { pos.x = r;          pos.vx =  Math.abs(pos.vx); pos.heading = Math.atan2(pos.vy,  Math.abs(pos.vx)); }
     if (pos.x > this.W - r) { pos.x = this.W - r; pos.vx = -Math.abs(pos.vx); pos.heading = Math.atan2(pos.vy, -Math.abs(pos.vx)); }

@@ -178,6 +178,15 @@ function renderStatusBar(state) {
   document.getElementById('signal-label').textContent  = `SIGNAL: ${label}`;
   document.getElementById('episode-count').textContent = `EPISODE: ${state.episodeCount}`;
   document.getElementById('elapsed-time').textContent  = `TIME: ${state.episodeTime.toFixed(1)}s`;
+
+  const policyEl = document.getElementById('policy-mode');
+  if (state.usingNN) {
+    policyEl.textContent  = 'NEURAL NET';
+    policyEl.className    = 'policy-nn';
+  } else {
+    policyEl.textContent  = 'SCRIPTED';
+    policyEl.className    = 'policy-scripted';
+  }
 }
 
 // ─── Watchlist table ───────────────────────────────────────────────────────
@@ -199,7 +208,21 @@ function renderWatchlist(tierStats) {
 sim.onTick       = state      => { renderStatusBar(state); renderObsVector(state); };
 sim.onEpisodeEnd = tierStats  => renderWatchlist(tierStats);
 
+// ─── Model loading ─────────────────────────────────────────────────────────
+async function loadModels() {
+  const tiers = [2, 3, 4, 5];
+  const models = {};
+  await Promise.all(tiers.map(async t => {
+    try {
+      const res = await fetch(`models/tier${t}.json`);
+      if (res.ok) models[t] = await res.json();
+    } catch (_) { /* model unavailable — fall back to scripted */ }
+  }));
+  sim.setModels(models);
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────
 renderDetailPanel(0);
 renderWatchlist(sim.tierStats);
 sim.start();
+loadModels();
