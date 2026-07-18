@@ -1,6 +1,6 @@
 # RISK TERMINAL — Observability Simulator
 
-**Live demo → [rl-risk-terminal.vercel.app](https://rl-risk-terminal.vercel.app)**
+**Live demo → [rl-risk-terminal.vercel.app](https://rl-risk-terminal.vercel.app)** &nbsp;·&nbsp; **Blog post → [Read on Medium](https://medium.com/@kartikkale03/reinforcement-learning-wont-save-your-portfolio-if-it-s-flying-blind-6cce4211acd6)**
 
 An interactive, browser-based simulator that demonstrates a core principle in reinforcement learning applied to quantitative trading: **an agent's survival performance is bounded by its observation space, not its model complexity.**
 
