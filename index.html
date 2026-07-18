@@ -10,133 +10,174 @@
 <body>
   <div class="terminal-container">
 
-    <!-- ── Header ──────────────────────────────────────────────────────── -->
-    <header class="term-header">
-      <span class="term-title">RISK TERMINAL <span class="version">v1.0</span></span>
-      <span class="term-subtitle">Feature Ablation Simulator — Observation Space vs. Survival</span>
+    <!-- ── Top bar: brand + tier buttons in one row ─────────────────────── -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="term-title">RISK TERMINAL <span class="version">v1.0</span></span>
+        <span class="term-subtitle">Observation Space vs. Survival</span>
+      </div>
+      <div class="tier-row" role="group" aria-label="Tier presets">
+        <button class="tier-btn active" data-tier="0" aria-pressed="true">TIER 0</button>
+        <button class="tier-btn"        data-tier="1" aria-pressed="false">TIER 1</button>
+        <button class="tier-btn"        data-tier="2" aria-pressed="false">TIER 2</button>
+        <button class="tier-btn"        data-tier="3" aria-pressed="false">TIER 3</button>
+        <button class="tier-btn"        data-tier="4" aria-pressed="false">TIER 4</button>
+        <button class="tier-btn"        data-tier="5" aria-pressed="false">TIER 5</button>
+        <button class="tier-btn sandbox-btn" id="btn-sandbox" aria-pressed="false">SANDBOX</button>
+      </div>
     </header>
 
-    <!-- ── Tier selector ───────────────────────────────────────────────── -->
-    <div class="control-row tier-row" role="group" aria-label="Tier presets">
-      <button class="tier-btn active" data-tier="0" aria-pressed="true">TIER 0</button>
-      <button class="tier-btn"        data-tier="1" aria-pressed="false">TIER 1</button>
-      <button class="tier-btn"        data-tier="2" aria-pressed="false">TIER 2</button>
-      <button class="tier-btn"        data-tier="3" aria-pressed="false">TIER 3</button>
-      <button class="tier-btn"        data-tier="4" aria-pressed="false">TIER 4</button>
-      <button class="tier-btn"        data-tier="5" aria-pressed="false">TIER 5</button>
-      <button class="tier-btn sandbox-btn" id="btn-sandbox" aria-pressed="false">SANDBOX</button>
-    </div>
+    <!-- ── Two-column body ─────────────────────────────────────────────────── -->
+    <div class="body-layout">
 
-    <!-- ── Arena canvas ────────────────────────────────────────────────── -->
-    <div class="canvas-wrapper" role="img" aria-label="Simulation arena">
-      <canvas id="arena"></canvas>
-    </div>
+      <!-- Left: simulation ───────────────────────────────────────────────── -->
+      <div class="col-left">
 
-    <!-- ── Status bar ──────────────────────────────────────────────────── -->
-    <div class="status-bar" aria-live="polite" aria-atomic="true">
-      <span id="live-count">LIVE: —</span>
-      <span id="signal-label">SIGNAL: —</span>
-      <span id="episode-count">EPISODE: —</span>
-      <span id="elapsed-time">TIME: 0.0s</span>
-    </div>
+        <!-- Arena -->
+        <div class="arena-wrap" role="img" aria-label="Simulation arena">
+          <canvas id="arena"></canvas>
+        </div>
 
-    <!-- ── Equity curve canvas ─────────────────────────────────────────── -->
-    <div class="canvas-wrapper equity-wrapper" role="img" aria-label="Equity curve — surviving positions over episode time">
-      <canvas id="equity-curve"></canvas>
-    </div>
-
-    <!-- ── Feature Online + Observation Vector ─────────────────────────── -->
-    <div class="info-row">
-
-      <div class="card" id="feature-card">
-        <div class="card-label">FEATURE ONLINE</div>
-        <div class="feature-signal" id="feature-signal">NONE</div>
-        <div class="feature-body"   id="feature-body"></div>
-      </div>
-
-      <div class="card obs-card">
-        <div class="card-label">OBSERVATION VECTOR</div>
-        <p class="obs-legend">Focus: nearest surviving position to market shock</p>
-        <div class="obs-fields" aria-label="Live observation vector">
-          <div class="obs-row">
-            <span class="obs-key">DD:</span>
-            <span class="obs-val locked" id="obs-dd">—</span>
-            <span class="obs-hint">distance to shock (px)</span>
+        <!-- Combined status + controls row -->
+        <div class="status-ctrl-bar" aria-live="polite">
+          <div class="status-fields">
+            <span id="live-count">LIVE: —</span>
+            <span id="signal-label">SIGNAL: —</span>
+            <span id="episode-count">EPISODE: —</span>
+            <span id="elapsed-time">TIME: 0.0s</span>
           </div>
-          <div class="obs-row">
-            <span class="obs-key">DIR:</span>
-            <span class="obs-val locked" id="obs-dir">—</span>
-            <span class="obs-hint">shock direction (dx, dy)</span>
-          </div>
-          <div class="obs-row">
-            <span class="obs-key">VOL:</span>
-            <span class="obs-val locked" id="obs-vol">—</span>
-            <span class="obs-hint">shock speed (px/s)</span>
-          </div>
-          <div class="obs-row">
-            <span class="obs-key">LIQ:</span>
-            <span class="obs-val locked" id="obs-liq">—</span>
-            <span class="obs-hint">distance to nearest wall (px)</span>
+          <div class="ctrl-group">
+            <button class="ctrl-btn"        id="btn-playpause">PAUSE</button>
+            <button class="ctrl-btn"        id="btn-reset-episode">RESET EP</button>
+            <button class="ctrl-btn danger" id="btn-reset-stats">RESET STATS</button>
           </div>
         </div>
-      </div>
 
-    </div>
+        <!-- Equity curve -->
+        <div class="equity-wrap" role="img" aria-label="Equity curve">
+          <canvas id="equity-curve"></canvas>
+        </div>
 
-    <!-- ── Sandbox panel (hidden until SANDBOX is selected) ────────────── -->
-    <div class="card sandbox-panel hidden" id="sandbox-panel">
-      <div class="card-label">SANDBOX — MANUAL SIGNAL OVERRIDE</div>
-      <p class="sandbox-note">
-        Custom combinations are simulated and visualised normally but excluded from the backtest table below.
-      </p>
-      <div class="sandbox-toggles">
-        <label class="toggle-label">
-          <input type="checkbox" id="tog-distance" class="toggle-input" />
-          <span>DISTANCE (DD)</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="tog-direction" class="toggle-input" />
-          <span>DIRECTION (DIR)</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="tog-velocity" class="toggle-input" />
-          <span>VELOCITY (VOL)</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="tog-walls" class="toggle-input" />
-          <span>WALL PROXIMITY (LIQ)</span>
-        </label>
-      </div>
-    </div>
+      </div><!-- /col-left -->
 
-    <!-- ── Backtest / watchlist table ──────────────────────────────────── -->
-    <div class="card">
-      <div class="card-label">BACKTEST — SURVIVAL RATE BY TIER</div>
-      <table class="watchlist" id="watchlist" aria-label="Per-tier survival statistics">
-        <thead>
-          <tr>
-            <th scope="col">TIER</th>
-            <th scope="col">SIGNAL</th>
-            <th scope="col">EPISODES</th>
-            <th scope="col">SURVIVAL RATE</th>
-          </tr>
-        </thead>
-        <tbody id="watchlist-body"></tbody>
-      </table>
-    </div>
+      <!-- Right: detail + obs vector + watchlist ─────────────────────────── -->
+      <aside class="col-right">
 
-    <!-- ── Playback controls ────────────────────────────────────────────── -->
-    <div class="control-row controls-row">
-      <button class="ctrl-btn"        id="btn-playpause">PAUSE</button>
-      <button class="ctrl-btn"        id="btn-reset-episode">RESET EPISODE</button>
-      <button class="ctrl-btn danger" id="btn-reset-stats">RESET STATS</button>
-    </div>
+        <!-- Tier detail / Sandbox panel (mutually exclusive) -->
+        <div class="card detail-card" id="detail-card">
+          <div class="card-label" id="detail-card-label">MODEL INPUTS — TIER 0 · NONE</div>
+
+          <!-- Tier detail content -->
+          <div id="tier-detail-content" class="detail-scroll">
+
+            <div class="detail-section">
+              <div class="detail-heading">INPUT SHAPE</div>
+              <div class="detail-shape" id="detail-shape">(0,)</div>
+            </div>
+
+            <div class="detail-section">
+              <div class="detail-heading">OBSERVATION VECTOR</div>
+              <ul class="detail-list" id="detail-vector">
+                <li class="dim-item">— no inputs —</li>
+              </ul>
+            </div>
+
+            <div class="detail-section">
+              <div class="detail-heading">POLICY BEHAVIOUR</div>
+              <ul class="detail-list" id="detail-policy"></ul>
+            </div>
+
+            <div class="detail-section">
+              <div class="detail-heading">KEY FORMULAS</div>
+              <pre class="detail-formula" id="detail-formula"></pre>
+            </div>
+
+            <div class="detail-section no-border">
+              <div class="detail-heading">EXPECTED SURVIVAL</div>
+              <div class="detail-survival" id="detail-survival"></div>
+              <div class="detail-note" id="detail-note"></div>
+            </div>
+
+          </div><!-- /tier-detail-content -->
+
+          <!-- Sandbox controls (shown when SANDBOX active) -->
+          <div id="sandbox-content" class="hidden detail-scroll">
+            <p class="sandbox-note">
+              Toggle signals freely. Custom combinations are simulated normally but excluded from the backtest table.
+            </p>
+            <div class="sandbox-toggles">
+              <label class="toggle-label">
+                <input type="checkbox" id="tog-distance" class="toggle-input" />
+                <span>DISTANCE (DD)</span>
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="tog-direction" class="toggle-input" />
+                <span>DIRECTION (DIR)</span>
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="tog-velocity" class="toggle-input" />
+                <span>VELOCITY (VOL)</span>
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="tog-walls" class="toggle-input" />
+                <span>WALL PROXIMITY (LIQ)</span>
+              </label>
+            </div>
+          </div><!-- /sandbox-content -->
+        </div><!-- /detail-card -->
+
+        <!-- Live observation vector -->
+        <div class="card obs-card">
+          <div class="card-label">OBSERVATION VECTOR — FOCUS POSITION</div>
+          <div class="obs-fields" aria-label="Live observation vector">
+            <div class="obs-row">
+              <span class="obs-key">DD:</span>
+              <span class="obs-val locked" id="obs-dd">—</span>
+              <span class="obs-hint">distance to shock</span>
+            </div>
+            <div class="obs-row">
+              <span class="obs-key">DIR:</span>
+              <span class="obs-val locked" id="obs-dir">—</span>
+              <span class="obs-hint">direction (dx, dy)</span>
+            </div>
+            <div class="obs-row">
+              <span class="obs-key">VOL:</span>
+              <span class="obs-val locked" id="obs-vol">—</span>
+              <span class="obs-hint">shock speed px/s</span>
+            </div>
+            <div class="obs-row">
+              <span class="obs-key">LIQ:</span>
+              <span class="obs-val locked" id="obs-liq">—</span>
+              <span class="obs-hint">nearest wall px</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backtest / watchlist -->
+        <div class="card watchlist-card">
+          <div class="card-label">BACKTEST — SURVIVAL RATE BY TIER</div>
+          <table class="watchlist" aria-label="Per-tier survival statistics">
+            <thead>
+              <tr>
+                <th>TIER</th>
+                <th>SIGNAL</th>
+                <th>EPS</th>
+                <th>SURVIVAL</th>
+              </tr>
+            </thead>
+            <tbody id="watchlist-body"></tbody>
+          </table>
+        </div>
+
+      </aside><!-- /col-right -->
+
+    </div><!-- /body-layout -->
 
     <footer class="term-footer">
-      RISK TERMINAL — educational simulator &nbsp;|&nbsp; no real market data &nbsp;|&nbsp; no financial advice
+      RISK TERMINAL — educational simulator &nbsp;·&nbsp; no real market data &nbsp;·&nbsp; no financial advice
     </footer>
 
-  </div>
+  </div><!-- /terminal-container -->
 
   <script type="module" src="main.js"></script>
 </body>

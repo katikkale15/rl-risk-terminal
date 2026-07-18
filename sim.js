@@ -7,7 +7,7 @@ const ELIM_RADIUS          = 16;   // px — elimination contact distance
 const EPISODE_DURATION     = 15;   // seconds
 const HEADING_MIN          = 0.8;  // seconds before a T0/T1 position changes heading
 const HEADING_MAX          = 2.2;
-const RESPAWN_DELAY        = 1.5;  // seconds between episode end and next spawn
+const RESPAWN_DELAY        = 0.8;  // seconds between episode end and next spawn
 const GRID_SIZE            = 40;   // px — arena background grid
 
 // ─── Colours (kept here so renderer is self-contained) ─────────────────────
@@ -68,12 +68,14 @@ export class Simulation {
   setTier(id) {
     this.tierId         = id;
     this.sandboxSignals = null;
-    this._resetCurve();
+    this.respawnTimer   = null; // cancel any pending auto-respawn
+    this._startEpisode();
   }
 
   setSandboxSignals(signals) {
     this.sandboxSignals = { ...signals };
-    this._resetCurve();
+    this.respawnTimer   = null;
+    this._startEpisode();
   }
 
   togglePause() {
